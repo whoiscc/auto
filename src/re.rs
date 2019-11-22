@@ -1,21 +1,18 @@
 use crate::nfa::{NFAutoBlueprint, NFAutoBuilder};
-use std::convert::Into;
 use std::hash::Hash;
 
-pub enum Re<T, R>
-where
-    R: Into<Re<T, R>>,
-{
+enum RePriv<T> {
     Plain(T),
-    ZeroOrMore(R),
-    Concat(R, R),
-    Either(R, R),
+    ZeroOrMore(Box<RePriv<T>>),
+    Concat(Box<RePriv<T>>, Box<RePriv<T>>),
+    Either(Box<RePriv<T>>, Box<RePriv<T>>),
 }
 
-impl<T, R> Re<T, R>
+pub struct Re<T>(RePriv<T>);
+
+impl<T> RePriv<T>
 where
     T: Eq + Hash + Clone,
-    R: Into<Re<T, R>>,
 {
     pub fn compile(self) -> NFAutoBlueprint<u64, T> {
         let builder = NFAutoBuilder::with_start_state(0).accept(1);
@@ -32,8 +29,8 @@ where
         right: u64,
     ) -> NFAutoBuilder<u64, T> {
         match self {
-            Re::Plain(trans) => builder.connect(left, trans, right),
-            Re::ZeroOrMore(inner) => {
+            RePriv::Plain(trans) => builder.connect(left, trans, right),
+            RePriv::ZeroOrMore(inner) => {
                 let (inner_left, inner_right) = (*counter, *counter + 1);
                 *counter += 2;
                 let builder = builder
@@ -41,21 +38,15 @@ where
                     .connect_void(inner_right, right)
                     .connect_void(inner_right, inner_left)
                     .connect_void(left, right);
-                inner
-                    .into()
-                    .recursive_compile(builder, counter, inner_left, inner_right)
+                inner.recursive_compile(builder, counter, inner_left, inner_right)
             }
-            Re::Concat(first, second) => {
+            RePriv::Concat(first, second) => {
                 let middle = *counter;
                 *counter += 1;
-                let builder = first
-                    .into()
-                    .recursive_compile(builder, counter, left, middle);
-                second
-                    .into()
-                    .recursive_compile(builder, counter, middle, right)
+                let builder = first.recursive_compile(builder, counter, left, middle);
+                second.recursive_compile(builder, counter, middle, right)
             }
-            Re::Either(first, second) => {
+            RePriv::Either(first, second) => {
                 let (first_left, first_right, second_left, second_right) =
                     (*counter, *counter + 1, *counter + 2, *counter + 3);
                 *counter += 4;
@@ -64,15 +55,37 @@ where
                     .connect_void(left, second_left)
                     .connect_void(first_right, right)
                     .connect_void(second_right, right);
-                let builder =
-                    first
-                        .into()
-                        .recursive_compile(builder, counter, first_left, first_right);
-                second
-                    .into()
-                    .recursive_compile(builder, counter, second_left, second_right)
+                let builder = first.recursive_compile(builder, counter, first_left, first_right);
+                second.recursive_compile(builder, counter, second_left, second_right)
             }
         }
+    }
+}
+
+impl<T> Re<T> {
+    pub fn plain(trans: T) -> Self {
+        Self(RePriv::Plain(trans))
+    }
+
+    pub fn zero_or_more(inner: Self) -> Self {
+        Self(RePriv::ZeroOrMore(Box::new(inner.0)))
+    }
+
+    pub fn concat(first: Self, second: Self) -> Self {
+        Self(RePriv::Concat(Box::new(first.0), Box::new(second.0)))
+    }
+
+    pub fn either(first: Self, second: Self) -> Self {
+        Self(RePriv::Either(Box::new(first.0), Box::new(second.0)))
+    }
+}
+
+impl<T> Re<T>
+where
+    T: Eq + Hash + Clone,
+{
+    pub fn compile(self) -> NFAutoBlueprint<u64, T> {
+        self.0.compile()
     }
 }
 
@@ -80,33 +93,22 @@ where
 mod tests {
     use super::*;
 
-    struct ReBox<T>(std::boxed::Box<Re<T, ReBox<T>>>);
-
-    impl<T> Into<Re<T, ReBox<T>>> for ReBox<T> {
-        fn into(self) -> Re<T, ReBox<T>> {
-            *self.0
-        }
-    }
-
     #[test]
-    fn compile() {
-        // (a | b)*c
-        let re = Re::Concat(
-            ReBox(Box::new(Re::ZeroOrMore(ReBox(Box::new(Re::Either(
-                ReBox(Box::new(Re::Plain('a'))),
-                ReBox(Box::new(Re::Plain('b'))),
-            )))))),
-            ReBox(Box::new(Re::Plain('c'))),
-        );
-        let bp = re.compile();
-        let mut auto = bp.create();
-        for trans in "abababbc".chars() {
-            assert!(!auto.is_accepted());
-            auto.trigger(&trans);
-            assert!(!auto.is_dead());
+    fn compile_and_match() {
+        // (a|b)*c
+        let bp = Re::concat(
+            Re::zero_or_more(Re::either(Re::plain('a'), Re::plain('b'))),
+            Re::plain('c'),
+        )
+        .compile();
+        let mut nfa = bp.create();
+        for c in "ababbabc".chars() {
+            assert!(!nfa.is_accepted());
+            nfa.trigger(&c);
+            assert!(!nfa.is_dead());
         }
-        assert!(auto.is_accepted());
-        auto.trigger(&'d');
-        assert!(auto.is_dead());
+        assert!(nfa.is_accepted());
+        nfa.trigger(&'d');
+        assert!(nfa.is_dead());
     }
 }

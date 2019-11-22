@@ -6,6 +6,7 @@ enum RePriv<T> {
     ZeroOrMore(Box<RePriv<T>>),
     Concat(Box<RePriv<T>>, Box<RePriv<T>>),
     Either(Box<RePriv<T>>, Box<RePriv<T>>),
+    Wildcard,
 }
 
 pub struct Re<T>(RePriv<T>);
@@ -58,6 +59,7 @@ where
                 let builder = first.recursive_compile(builder, counter, first_left, first_right);
                 second.recursive_compile(builder, counter, second_left, second_right)
             }
+            RePriv::Wildcard => builder.connect_wildcard(left, right),
         }
     }
 }
@@ -77,6 +79,10 @@ impl<T> Re<T> {
 
     pub fn either(first: Self, second: Self) -> Self {
         Self(RePriv::Either(Box::new(first.0), Box::new(second.0)))
+    }
+
+    pub fn wildcard() -> Self {
+        Self(RePriv::Wildcard)
     }
 }
 

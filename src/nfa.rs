@@ -10,6 +10,7 @@ where
 {
     graph: HashMap<S, HashMap<T, HashSet<S>>>,
     void_graph: HashMap<S, HashSet<S>>,
+    wildcard_graph: HashMap<S, HashSet<S>>,
     start_state: S,
     accept_state_set: HashSet<S>,
 }
@@ -23,6 +24,7 @@ where
         Self {
             graph: HashMap::new(),
             void_graph: HashMap::new(),
+            wildcard_graph: HashMap::new(),
             start_state,
             accept_state_set: HashSet::new(),
         }
@@ -58,6 +60,14 @@ where
         self.void_graph.get_mut(&from).unwrap().insert(to);
         self
     }
+
+    pub fn connect_wildcard(mut self, from: S, to: S) -> Self {
+        if !self.wildcard_graph.contains_key(&from) {
+            self.wildcard_graph.insert(from.clone(), HashSet::new());
+        }
+        self.wildcard_graph.get_mut(&from).unwrap().insert(to);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +78,7 @@ where
 {
     graph: HashMap<S, HashMap<T, HashSet<S>>>,
     void_graph: HashMap<S, HashSet<S>>,
+    wildcard_graph: HashMap<S, HashSet<S>>,
     start_state: S,
     accept_state_set: HashSet<S>,
 }
@@ -81,6 +92,7 @@ where
         NFAutoBlueprint {
             graph: self.graph,
             void_graph: self.void_graph,
+            wildcard_graph: self.wildcard_graph,
             start_state: self.start_state,
             accept_state_set: self.accept_state_set,
         }
@@ -99,18 +111,37 @@ where
     pub fn accept_state_set(&self) -> &HashSet<S> {
         &self.accept_state_set
     }
+}
 
-    pub fn iterate_connections(&self) -> impl Iterator<Item = (&S, Option<&T>, &S)> {
-        Iterator::chain(
-            self.graph.iter().flat_map(|(from, trans_to)| {
+pub enum ConnType<'t, T> {
+    Plain(&'t T),
+    Void,
+    Wildcard,
+}
+
+impl<S, T> NFAutoBlueprint<S, T>
+where
+    S: Hash + Eq,
+    T: Hash + Eq,
+{
+    pub fn iterate_connections(&self) -> impl Iterator<Item = (&S, ConnType<T>, &S)> {
+        self.graph
+            .iter()
+            .flat_map(|(from, trans_to)| {
                 trans_to.iter().flat_map(move |(trans, to_set)| {
-                    to_set.iter().map(move |to| (from, Some(trans), to))
+                    to_set
+                        .iter()
+                        .map(move |to| (from, ConnType::Plain(trans), to))
                 })
-            }),
-            self.void_graph
-                .iter()
-                .flat_map(|(from, to_set)| to_set.iter().map(move |to| (from, None, to))),
-        )
+            })
+            .chain(
+                self.void_graph.iter().flat_map(|(from, to_set)| {
+                    to_set.iter().map(move |to| (from, ConnType::Void, to))
+                }),
+            )
+            .chain(self.wildcard_graph.iter().flat_map(|(from, to_set)| {
+                to_set.iter().map(move |to| (from, ConnType::Wildcard, to))
+            }))
     }
 }
 
@@ -186,6 +217,12 @@ where
                     .unwrap_or(&placeholder_state)
                     .get(trans)
                     .unwrap_or(&placeholder_trans)
+                    .union(
+                        self.blueprint
+                            .wildcard_graph
+                            .get(state)
+                            .unwrap_or(&placeholder_trans),
+                    )
             })
             .cloned()
             .collect();
@@ -235,5 +272,27 @@ mod tests {
         assert!(auto.is_accepted());
         auto.trigger(&'c');
         assert!(auto.is_dead());
+    }
+
+    #[test]
+    fn wildcard_connection() {
+        // a.*a
+        let bp = NFAutoBuilder::with_start_state(0)
+            .connect(0, 'a', 1)
+            .connect_void(1, 2)
+            .connect_wildcard(2, 3)
+            .connect_void(3, 4)
+            .connect_void(3, 2)
+            .connect_void(1, 4)
+            .connect(4, 'a', 5)
+            .accept(5)
+            .finalize();
+        let mut auto = bp.create();
+        for c in "abcdefga".chars() {
+            assert!(!auto.is_accepted());
+            auto.trigger(&c);
+            assert!(!auto.is_dead());
+        }
+        assert!(auto.is_accepted());
     }
 }

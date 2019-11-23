@@ -143,11 +143,7 @@ mod tests {
             Re::plain('c'),
         )
         .compile();
-        assert!(bp
-            .create()
-            .test("ababbabc".chars().collect::<Vec<_>>().iter()));
-        assert!(!bp
-            .create()
-            .test("ababbabd".chars().collect::<Vec<_>>().iter()));
+        assert!(bp.create().test("ababbabc".chars()));
+        assert!(!bp.create().test("ababbabd".chars()));
     }
 }

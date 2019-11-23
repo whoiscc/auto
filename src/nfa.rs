@@ -1,3 +1,4 @@
+use crate::algo::extend_state_set;
 use crate::auto::Auto;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -156,6 +157,26 @@ where
     }
 }
 
+pub struct ConnectionsFrom<'bp, S, T> {
+    pub plain: Option<&'bp HashMap<T, HashSet<S>>>,
+    pub wildcard: Option<&'bp HashSet<S>>,
+    pub void: Option<&'bp HashSet<S>>,
+}
+
+impl<S, T> NFAutoBlueprint<S, T>
+where
+    S: Hash + Eq,
+    T: Hash + Eq,
+{
+    pub fn connections_from(&self, from: &S) -> ConnectionsFrom<S, T> {
+        ConnectionsFrom {
+            plain: self.graph.get(from),
+            wildcard: self.wildcard_graph.get(from),
+            void: self.void_graph.get(from),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NFAuto<'b, S, T>
 where
@@ -187,20 +208,7 @@ where
     T: Hash + Eq,
 {
     fn extend_current_state_set(&mut self) {
-        let fallback = HashSet::new();
-        loop {
-            let void_reachable: HashSet<_> = self
-                .current_state_set()
-                .iter()
-                .flat_map(|state| self.blueprint.void_graph.get(state).unwrap_or(&fallback))
-                .cloned()
-                .collect();
-            let extended = self.current_state_set() | &void_reachable;
-            if extended.len() == self.current_state_set().len() {
-                break;
-            }
-            self.current_state_set = extended;
-        }
+        self.current_state_set = extend_state_set(self.blueprint, self.current_state_set());
     }
 
     pub fn is_accepted(&self) -> bool {

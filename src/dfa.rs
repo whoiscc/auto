@@ -1,3 +1,4 @@
+use crate::auto::Auto;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::Iterator;
@@ -199,6 +200,26 @@ where
                     .unwrap()
             })
             .clone()
+    }
+}
+
+impl<'b, S, T> Auto for DFAuto<'b, S, T>
+where
+    S: Eq + Hash + Clone,
+    T: Eq + Hash,
+{
+    type Trans = T;
+
+    fn is_accepted(&self) -> bool {
+        self.is_accepted()
+    }
+
+    fn test_trigger(&self, trans: &T) -> bool {
+        self.test_trigger(trans)
+    }
+
+    fn trigger(&mut self, trans: &T) {
+        self.trigger(trans);
     }
 }
 

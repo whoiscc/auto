@@ -9,6 +9,7 @@ where
     T: Eq + Hash,
 {
     graph: HashMap<S, HashMap<T, S>>,
+    fallback_graph: HashMap<S, S>,
     start_state: S,
     accept_state_set: HashSet<S>,
 }
@@ -21,6 +22,7 @@ where
     pub fn with_start_state(start_state: S) -> Self {
         Self {
             graph: HashMap::new(),
+            fallback_graph: HashMap::new(),
             start_state,
             accept_state_set: HashSet::new(),
         }
@@ -39,6 +41,15 @@ where
         if let Some(old_to) = self.graph.get_mut(&from).unwrap().insert(trans, to.clone()) {
             if old_to != to {
                 panic!("duplicated transition");
+            }
+        }
+        self
+    }
+
+    pub fn connect_fallback(mut self, from: S, to: S) -> Self {
+        if let Some(old_to) = self.fallback_graph.insert(from, to.clone()) {
+            if old_to != to {
+                panic!("duplicated fallback transition");
             }
         }
         self
@@ -63,6 +74,7 @@ where
     T: Eq + Hash,
 {
     graph: HashMap<S, HashMap<T, S>>,
+    fallback_graph: HashMap<S, S>,
     start_state: S,
     accept_state_set: HashSet<S>,
 }
@@ -75,6 +87,7 @@ where
     pub fn finalize(self) -> DFAutoBlueprint<S, T> {
         DFAutoBlueprint {
             graph: self.graph,
+            fallback_graph: self.fallback_graph,
             start_state: self.start_state,
             accept_state_set: self.accept_state_set,
         }
@@ -140,11 +153,21 @@ where
     }
 
     pub fn test_trigger(&self, trans: &T) -> bool {
-        self.blueprint
+        let plain_test = if let Some(result) = self
+            .blueprint
             .graph
             .get(self.current_state())
-            .unwrap()
-            .contains_key(trans)
+            .map(|from_state| from_state.contains_key(trans))
+        {
+            result
+        } else {
+            false
+        };
+        plain_test
+            || self
+                .blueprint
+                .fallback_graph
+                .contains_key(self.current_state())
     }
 }
 
@@ -158,10 +181,14 @@ where
             .blueprint
             .graph
             .get(self.current_state())
-            .unwrap()
-            .get(trans)
-            .unwrap()
-            .clone();
+            .and_then(|from_state| from_state.get(trans))
+            .unwrap_or_else(|| {
+                self.blueprint
+                    .fallback_graph
+                    .get(self.current_state())
+                    .unwrap()
+            })
+            .clone()
     }
 }
 
@@ -222,5 +249,31 @@ mod tests {
         auto.trigger(&"0 -> 1");
         assert_eq!(auto.current_state(), &1);
         assert!(auto.is_accepted());
+    }
+
+    #[test]
+    fn trigger_fallback() {
+        let dfa = DFAutoBuilder::with_start_state(0)
+            .connect(0, "0 -> 1", 1)
+            .connect(1, "1 -> 2", 2)
+            .connect(2, "2 -> 3", 3)
+            .accept(3)
+            .connect_fallback(0, 0)
+            .connect_fallback(1, 0)
+            .connect_fallback(2, 0)
+            .connect_fallback(3, 3)
+            .finalize();
+        let mut auto = dfa.create();
+        for t in [
+            "0 -> 1", "1 -> 2", "error", "error", "0 -> 1", "error", "0 -> 1", "1 -> 2", "2 -> 3",
+        ]
+        .into_iter()
+        {
+            assert!(!auto.is_accepted());
+            assert!(auto.test_trigger(&t));
+            auto.trigger(&t);
+        }
+        assert!(auto.is_accepted());
+        assert!(auto.test_trigger(&"error"));
     }
 }

@@ -1,3 +1,4 @@
+use crate::auto::Auto;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::iter::Iterator;
@@ -227,6 +228,26 @@ where
             .cloned()
             .collect();
         self.extend_current_state_set();
+    }
+}
+
+impl<'b, S, T> Auto for NFAuto<'b, S, T>
+where
+    S: Hash + Eq + Clone,
+    T: Hash + Eq + 'static,
+{
+    type Trans = T;
+
+    fn test_trigger(&self, _trans: &Self::Trans) -> bool {
+        !self.is_dead()
+    }
+
+    fn trigger(&mut self, trans: &Self::Trans) {
+        self.trigger(trans)
+    }
+
+    fn is_accepted(&self) -> bool {
+        self.is_accepted()
     }
 }
 

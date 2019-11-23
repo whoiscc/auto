@@ -117,4 +117,21 @@ mod tests {
         nfa.trigger(&'d');
         assert!(nfa.is_dead());
     }
+
+    #[test]
+    fn auto_trait_test() {
+        use crate::auto::Auto;
+
+        let bp = Re::concat(
+            Re::zero_or_more(Re::either(Re::plain('a'), Re::plain('b'))),
+            Re::plain('c'),
+        )
+        .compile();
+        assert!(bp
+            .create()
+            .test("ababbabc".chars().collect::<Vec<_>>().iter()));
+        assert!(!bp
+            .create()
+            .test("ababbabd".chars().collect::<Vec<_>>().iter()));
+    }
 }

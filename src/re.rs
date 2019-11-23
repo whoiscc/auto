@@ -1,5 +1,6 @@
 use crate::nfa::{NFAutoBlueprint, NFAutoBuilder};
 use std::hash::Hash;
+use std::mem;
 
 enum RePriv<T> {
     Plain(T),
@@ -16,52 +17,67 @@ where
     T: Eq + Hash + Clone,
 {
     pub fn compile(self) -> NFAutoBlueprint<u64, T> {
-        let builder = NFAutoBuilder::with_start_state(0).accept(1);
+        let mut builder = NFAutoBuilder::start(0).accept(1);
         let mut counter = 2;
-        self.recursive_compile(builder, &mut counter, 0, 1)
-            .finalize()
+        self.recursive_compile(&mut builder, &mut counter, 0, 1);
+        builder.finalize()
     }
 
     fn recursive_compile(
         self,
-        builder: NFAutoBuilder<u64, T>,
+        builder: &mut NFAutoBuilder<u64, T>,
         counter: &mut u64,
         left: u64,
         right: u64,
-    ) -> NFAutoBuilder<u64, T> {
+    ) {
         match self {
-            RePriv::Plain(trans) => builder.connect(left, trans, right),
+            RePriv::Plain(trans) => {
+                update_builder(builder, |b| b.connect(left, trans, right));
+            }
             RePriv::ZeroOrMore(inner) => {
                 let (inner_left, inner_right) = (*counter, *counter + 1);
                 *counter += 2;
-                let builder = builder
-                    .connect_void(left, inner_left)
-                    .connect_void(inner_right, right)
-                    .connect_void(inner_right, inner_left)
-                    .connect_void(left, right);
-                inner.recursive_compile(builder, counter, inner_left, inner_right)
+                update_builder(builder, |b| {
+                    b.connect_void(left, inner_left)
+                        .connect_void(inner_right, right)
+                        .connect_void(inner_right, inner_left)
+                        .connect_void(left, right)
+                });
+                inner.recursive_compile(builder, counter, inner_left, inner_right);
             }
             RePriv::Concat(first, second) => {
                 let middle = *counter;
                 *counter += 1;
-                let builder = first.recursive_compile(builder, counter, left, middle);
-                second.recursive_compile(builder, counter, middle, right)
+                first.recursive_compile(builder, counter, left, middle);
+                second.recursive_compile(builder, counter, middle, right);
             }
             RePriv::Either(first, second) => {
                 let (first_left, first_right, second_left, second_right) =
                     (*counter, *counter + 1, *counter + 2, *counter + 3);
                 *counter += 4;
-                let builder = builder
-                    .connect_void(left, first_left)
-                    .connect_void(left, second_left)
-                    .connect_void(first_right, right)
-                    .connect_void(second_right, right);
-                let builder = first.recursive_compile(builder, counter, first_left, first_right);
-                second.recursive_compile(builder, counter, second_left, second_right)
+                update_builder(builder, |b| {
+                    b.connect_void(left, first_left)
+                        .connect_void(left, second_left)
+                        .connect_void(first_right, right)
+                        .connect_void(second_right, right)
+                });
+                first.recursive_compile(builder, counter, first_left, first_right);
+                second.recursive_compile(builder, counter, second_left, second_right);
             }
-            RePriv::Wildcard => builder.connect_wildcard(left, right),
+            RePriv::Wildcard => {
+                update_builder(builder, |b| b.connect_wildcard(left, right));
+            }
         }
     }
+}
+
+fn update_builder<T, F>(builder_mut: &mut NFAutoBuilder<u64, T>, updater: F)
+where
+    T: Hash + Eq,
+    F: FnOnce(NFAutoBuilder<u64, T>) -> NFAutoBuilder<u64, T>,
+{
+    let mut updated = updater(mem::replace(builder_mut, Default::default()));
+    mem::swap(builder_mut, &mut updated);
 }
 
 impl<T> Re<T> {

@@ -19,13 +19,23 @@ where
     S: Eq + Hash,
     T: Eq + Hash,
 {
-    pub fn with_start_state(start_state: S) -> Self {
+    pub fn start(start_state: S) -> Self {
         Self {
             graph: HashMap::new(),
             fallback_graph: HashMap::new(),
             start_state,
             accept_state_set: HashSet::new(),
         }
+    }
+}
+
+impl<S, T> Default for DFAutoBuilder<S, T>
+where
+    S: Hash + Eq + Default,
+    T: Hash + Eq,
+{
+    fn default() -> Self {
+        Self::start(Default::default())
     }
 }
 
@@ -198,22 +208,20 @@ mod tests {
 
     #[test]
     fn build_auto() {
-        let _builder = DFAutoBuilder::with_start_state(0)
-            .connect(0, "0 -> 1", 1)
-            .accept(1);
+        let _builder = DFAutoBuilder::start(0).connect(0, "0 -> 1", 1).accept(1);
     }
 
     #[test]
     #[should_panic]
     fn build_auto_with_duplicated_trans() {
-        let _builder = DFAutoBuilder::with_start_state(0)
+        let _builder = DFAutoBuilder::start(0)
             .connect(0, "0 -> 1", 1)
             .connect(0, "0 -> 1", 2);
     }
 
     #[test]
     fn build_auto_with_redundant_info() {
-        let _builder = DFAutoBuilder::with_start_state(0)
+        let _builder = DFAutoBuilder::start(0)
             .connect(0, "0 -> 1", 1)
             .connect(0, "0 -> 1", 1)
             .accept(1)
@@ -222,7 +230,7 @@ mod tests {
 
     #[test]
     fn blueprint() {
-        let dfa = DFAutoBuilder::with_start_state(0)
+        let dfa = DFAutoBuilder::start(0)
             .connect(0, "0 -> 1", 1)
             .connect(0, "0 -> 0", 0)
             .connect(1, "1 -> 1", 1)
@@ -235,7 +243,7 @@ mod tests {
 
     #[test]
     fn trigger_auto() {
-        let dfa = DFAutoBuilder::with_start_state(0)
+        let dfa = DFAutoBuilder::start(0)
             .connect(0, "0 -> 1", 1)
             .connect(0, "0 -> 0", 0)
             .connect(1, "1 -> 1", 1)
@@ -253,7 +261,7 @@ mod tests {
 
     #[test]
     fn trigger_fallback() {
-        let dfa = DFAutoBuilder::with_start_state(0)
+        let dfa = DFAutoBuilder::start(0)
             .connect(0, "0 -> 1", 1)
             .connect(1, "1 -> 2", 2)
             .connect(2, "2 -> 3", 3)

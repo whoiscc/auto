@@ -21,7 +21,7 @@ where
     S: Hash + Eq,
     T: Hash + Eq,
 {
-    pub fn with_start_state(start_state: S) -> Self {
+    pub fn start(start_state: S) -> Self {
         Self {
             graph: HashMap::new(),
             void_graph: HashMap::new(),
@@ -34,6 +34,16 @@ where
     pub fn accept(mut self, state: S) -> Self {
         self.accept_state_set.insert(state);
         self
+    }
+}
+
+impl<S, T> Default for NFAutoBuilder<S, T>
+where
+    S: Hash + Eq + Default,
+    T: Hash + Eq,
+{
+    fn default() -> Self {
+        Self::start(Default::default())
     }
 }
 
@@ -258,7 +268,7 @@ mod tests {
     #[test]
     fn trigger_nfa() {
         // ab*a
-        let bp = NFAutoBuilder::with_start_state(0)
+        let bp = NFAutoBuilder::start(0)
             .connect(0, 'a', 1)
             .connect_void(1, 2)
             .connect(2, 'b', 3)
@@ -298,7 +308,7 @@ mod tests {
     #[test]
     fn wildcard_connection() {
         // a.*a
-        let bp = NFAutoBuilder::with_start_state(0)
+        let bp = NFAutoBuilder::start(0)
             .connect(0, 'a', 1)
             .connect_void(1, 2)
             .connect_wildcard(2, 3)
